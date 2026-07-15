@@ -1,76 +1,83 @@
-# Telnet Client with GUI and Auto Discovery
+# PyTelNetLink
 
-This Python project allows you to connect to any device in your local network via **Telnet Protocol**. It comes with a GUI interface to make the process easier and has an automatic device discovery feature to find devices with open **Telnet ports (23)**.
+A Python tool for discovering devices on a local network with open Telnet ports (23) and connecting to them through a Tkinter GUI. Built to make ad-hoc Telnet access to LAN devices (routers, switches, IoT devices, lab VMs) faster than manually tracking IPs.
 
-## 🚀 Features
+## Features
 
-- ✅ **Automatic Device Discovery:** Scans your local network to find devices with open Telnet ports.
-- ✅ **GUI Interface:** Provides a graphical interface to interact with the target device.
-- ✅ **Command Execution:** Allows you to execute commands on the target device and view the output in real-time.
-- ✅ **Username/Password Support:** Handles authentication if required.
-- ✅ **Cross-Platform:** Works on Windows, Linux, and MacOS.
+- **Fast parallel discovery** — thread-pooled scan of a /24 subnet with a live progress bar
+- **Real Telnet protocol handling** — raw-socket client that correctly strips IAC option-negotiation sequences instead of leaking control bytes into the terminal
+- **GUI session window** — command history (↑/↓), scrollback, and one-click session log export
+- **Optional authentication** — sends username/password automatically if the device prompts for them
+- **CLI shortcut** — `--subnet` flag to pre-fill the base IP and skip typing it every run
+- **No deprecated dependencies** — does not use `telnetlib` (removed in Python 3.13); works on current Python versions
+- **Cross-platform** — Windows, Linux, macOS
 
-## 📜 Requirements
+## Requirements
 
-- Python 3.10 or above
-- tkinter (built-in Python library)
+- Python 3.10+
+- Tkinter (see installation note below — it does **not** install via `pip`)
 
-## 📂 Installation
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/your-username/telnet-client-gui.git
-cd telnet-client-gui
-```
-
-2. Install any missing Python libraries (if not already installed):
+## Installation
 
 ```bash
-pip install tkinter
+git clone https://github.com/voltobe100/PyTelNetLink.git
+cd PyTelNetLink
 ```
 
-3. Run the script:
+Tkinter ships with the standard Python installer on Windows and macOS. On most Linux distributions it's a separate system package:
 
 ```bash
-python telnet_client.py
+# Debian/Ubuntu
+sudo apt install python3-tk
+
+# Fedora
+sudo dnf install python3-tkinter
+
+# Arch
+sudo pacman -S tk
 ```
 
-## 💻 Usage
+Then run:
 
-1. **Enter your Network Base IP** like `192.168.1.`.
-2. The program will scan all IPs from **192.168.1.1 to 192.168.1.255**.
-3. Select the device from the discovered devices.
-4. Enter **Username/Password** (if required).
-5. Use the terminal interface to send commands.
-6. Type `exit` or `quit` to close the connection.
-
-## 📜 Example Output
-
-```
-[+] Scanning for devices in the network...
-[+] Device found: 192.168.1.10
-[+] Device found: 192.168.1.11
-
-Select device index:
-[0] 192.168.1.10
-[1] 192.168.1.11
+```bash
+python pytelnetlink.py
+# or pre-fill the subnet:
+python pytelnetlink.py --subnet 192.168.1.
 ```
 
-## 🎉 Future Improvements
+## Usage
 
-- ✅ Save session logs in a text file.
-- ✅ Package it as an executable (.exe) file.
-- ✅ Add a file upload feature via Telnet.
+1. Enter your network's base IP (e.g. `192.168.1.`) and click **Scan Network**. A progress bar tracks the sweep across `.1`–`.254`.
+2. Select a discovered device from the list and click **Connect**.
+3. Enter the port (default `23`) and credentials, if the device requires them.
+4. Send commands in the session window — use ↑/↓ to recall previous commands.
+5. Click **Save Log** to export the full session transcript to a text file, or type `exit`/`quit` to close the session.
 
-## 🤝 Contributing
+## Security Note
 
-If you'd like to contribute, feel free to fork the repository and submit a pull request.
+Telnet transmits everything — including credentials — in **cleartext**, and this client's option negotiation simply declines every option a server proposes rather than fully implementing RFC 854. It's intended for lab environments, personal networks, and legacy devices you control, not for use over untrusted networks or against systems you don't have permission to access. Where possible, prefer SSH over Telnet for anything beyond local testing.
 
-## 📝 License
+## Architecture
 
-This project is licensed under the **MIT License**. You can use, modify, and distribute it freely.
+- `TelnetClient` — raw-socket Telnet client with IAC negotiation stripping
+- `scan_subnet()` — thread-pooled port scanner with progress callback
+- `SessionWindow` — GUI session view, backed by a background reader thread + queue so the UI never blocks on network I/O
+- `PyTelNetLinkApp` — main discovery window
+
+## Future Improvements
+
+- [ ] IPv6 / arbitrary CIDR support (currently assumes a /24)
+- [ ] Package as a standalone executable
+- [ ] File upload support over Telnet
+
+## Contributing
+
+Forks and pull requests are welcome.
+
+## License
+
+MIT License — free to use, modify, and distribute.
 
 ---
 
-💬 **Need Help?** Feel free to contact me at [vaibhavc.pgolchha@gmail.com](mailto:vaibhavc.pgolchha@gmail.com)
+Questions? Reach out at [vaibhavc.pgolchha@gmail.com](mailto:vaibhavc.pgolchha@gmail.com)
