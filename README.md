@@ -73,4 +73,4 @@ This project is licensed under the **MIT License**. You can use, modify, and dis
 
 ---
 
-💬 **Need Help?** Feel free to contact me at [vaibhavgolchha@proton.me](mailto:vaibhavgolchha@proton.me)
+💬 **Need Help?** Feel free to contact me at [vaibhavc.pgolchha@gmail.com](mailto:vaibhavc.pgolchha@gmail.com)
