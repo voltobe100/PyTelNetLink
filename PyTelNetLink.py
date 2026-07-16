@@ -128,6 +128,58 @@ class TelnetClient:
 # --------------------------------------------------------------------------
 # Network discovery
 # --------------------------------------------------------------------------
+def _ip_sort_key(ip: str) -> tuple:
+    """Sort key so IPs order numerically (1.1.1.2 before 1.1.1.10)."""
+    return tuple(int(part) for part in ip.split("."))
+
+
+def _probe_host(ip: str, port: int, timeout: float) -> str:
+    """
+    Attempt a single TCP connect and classify the result:
+      - "open"     : connection succeeded, Telnet (or something) is listening.
+      - "closed"   : host actively refused the connection - it's up, port isn't.
+      - "filtered" : no response within the timeout, or another network error
+                     (host unreachable, network unreachable, etc.) - most likely
+                     a firewall silently dropping the packets, or the host is down.
+    """
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            return "open"
+    except socket.timeout:
+        return "filtered"
+    except ConnectionRefusedError:
+        return "closed"
+    except OSError:
+        # Covers host/network-unreachable and other connect-time errors. We can't
+        # tell a dead host apart from a firewall drop from a plain TCP connect,
+        # so both land in "filtered" alongside real timeouts.
+        return "filtered"
+
+
+@dataclass
+class ScanSummary:
+    """Results of a subnet sweep, broken down by how each host responded."""
+
+    total: int = 0
+    open: List[str] = field(default_factory=list)
+    closed: List[str] = field(default_factory=list)
+    filtered: List[str] = field(default_factory=list)
+
+    @property
+    def reachable(self) -> List[str]:
+        """Hosts that answered at all, whether or not Telnet was open."""
+        return self.open + self.closed
+
+    def as_text(self) -> str:
+        return (
+            f"Hosts scanned: {self.total}\n"
+            f"Hosts reachable: {len(self.reachable)}\n"
+            f"Telnet servers found: {len(self.open)}\n"
+            f"Closed ports: {len(self.closed)}\n"
+            f"Filtered/timeouts: {len(self.filtered)}"
+        )
+
+
 def scan_subnet(
     base_ip: str,
     port: int = DEFAULT_TELNET_PORT,
@@ -135,39 +187,38 @@ def scan_subnet(
     max_workers: int = 100,
     progress_cb: Optional[Callable[[int, int], None]] = None,
     stop_flag: Optional[threading.Event] = None,
-) -> List[str]:
+) -> ScanSummary:
     """
-    Scan base_ip + '1'..'254' for hosts with `port` open.
-    Returns discovered IPs in ascending order. Calls progress_cb(done, total) as it goes.
+    Scan base_ip + '1'..'254' on `port`, classifying each host as open/closed/filtered.
+    Calls progress_cb(done, total) as results come in. Returns a ScanSummary.
     """
     hosts = [f"{base_ip}{i}" for i in range(1, 255)]
     total = len(hosts)
-    found: List[str] = []
-    found_lock = threading.Lock()
+    summary = ScanSummary(total=total)
+    results_lock = threading.Lock()
     progress_lock = threading.Lock()
     completed = 0
 
-    def check(ip: str) -> None:
+    def classify(ip: str) -> None:
         nonlocal completed
         if stop_flag is not None and stop_flag.is_set():
             return
-        try:
-            with socket.create_connection((ip, port), timeout=timeout):
-                with found_lock:
-                    found.append(ip)
-        except OSError:
-            pass
-        finally:
-            if progress_cb:
-                with progress_lock:
-                    completed += 1
-                    done = completed
-                progress_cb(done, total)
+        status = _probe_host(ip, port, timeout)
+        with results_lock:
+            getattr(summary, status).append(ip)
+        if progress_cb:
+            with progress_lock:
+                completed += 1
+                done = completed
+            progress_cb(done, total)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        list(pool.map(check, hosts))
+        list(pool.map(classify, hosts))
 
-    return sorted(found, key=lambda ip: tuple(int(p) for p in ip.split(".")))
+    summary.open.sort(key=_ip_sort_key)
+    summary.closed.sort(key=_ip_sort_key)
+    summary.filtered.sort(key=_ip_sort_key)
+    return summary
 
 
 def is_valid_base_ip(value: str) -> bool:
@@ -350,6 +401,9 @@ class PyTelNetLinkApp:
         self.connect_button = ttk.Button(frame, text="Connect", command=self.connect_selected, state=tk.DISABLED)
         self.connect_button.pack(fill=tk.X)
 
+        self.summary_label = ttk.Label(frame, text="", justify=tk.LEFT)
+        self.summary_label.pack(anchor=tk.W, pady=(8, 0))
+
     def start_scan(self) -> None:
         base_ip = self.ip_entry.get().strip()
         if not is_valid_base_ip(base_ip):
@@ -362,6 +416,7 @@ class PyTelNetLinkApp:
         self.scan_button.configure(state=tk.DISABLED)
         self.progress["value"] = 0
         self.status_label.configure(text="Scanning...")
+        self.summary_label.configure(text="")
 
         thread = threading.Thread(target=self._run_scan, args=(base_ip,), daemon=True)
         thread.start()
@@ -370,20 +425,24 @@ class PyTelNetLinkApp:
         def progress_cb(done: int, total: int) -> None:
             self.root.after(0, self._update_progress, done, total)
 
-        results = scan_subnet(base_ip, progress_cb=progress_cb, stop_flag=self.stop_scan)
-        self.root.after(0, self._scan_complete, results)
+        summary = scan_subnet(base_ip, progress_cb=progress_cb, stop_flag=self.stop_scan)
+        self.root.after(0, self._scan_complete, summary)
 
     def _update_progress(self, done: int, total: int) -> None:
         self.progress["value"] = done
         self.status_label.configure(text=f"Scanning... {done}/{total}")
 
-    def _scan_complete(self, results: List[str]) -> None:
-        self.devices = results
+    def _scan_complete(self, summary: ScanSummary) -> None:
+        # Connect list behavior is unchanged: only Telnet-open hosts are selectable.
+        self.devices = summary.open
         self.scan_button.configure(state=tk.NORMAL)
-        self.status_label.configure(text=f"Found {len(results)} device(s)." if results else "No devices found.")
-        for ip in results:
+        self.status_label.configure(
+            text=f"Found {len(summary.open)} device(s)." if summary.open else "No devices found."
+        )
+        for ip in summary.open:
             self.listbox.insert(tk.END, ip)
-        self.connect_button.configure(state=tk.NORMAL if results else tk.DISABLED)
+        self.connect_button.configure(state=tk.NORMAL if summary.open else tk.DISABLED)
+        self.summary_label.configure(text=summary.as_text())
 
     def connect_selected(self) -> None:
         selection = self.listbox.curselection()
