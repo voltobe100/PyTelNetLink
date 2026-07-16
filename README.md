@@ -5,6 +5,8 @@ A Python tool for discovering devices on a local network with open Telnet ports 
 ## Features
 
 - **Fast parallel discovery** — thread-pooled scan of a /24 subnet with a live progress bar
+- **Host-state classification** — distinguishes open (Telnet available), closed (host up, port refused), and filtered/timeout (no response — likely a firewall or dead host) instead of lumping every non-open result together
+- **Scan summary** — after each sweep, see hosts scanned, hosts reachable, Telnet servers found, closed ports, and filtered/timeouts at a glance
 - **Real Telnet protocol handling** — raw-socket client that correctly strips IAC option-negotiation sequences instead of leaking control bytes into the terminal
 - **GUI session window** — command history (↑/↓), scrollback, and one-click session log export
 - **Optional authentication** — sends username/password automatically if the device prompts for them
@@ -48,10 +50,11 @@ python pytelnetlink.py --subnet 192.168.1.
 ## Usage
 
 1. Enter your network's base IP (e.g. `192.168.1.`) and click **Scan Network**. A progress bar tracks the sweep across `.1`–`.254`.
-2. Select a discovered device from the list and click **Connect**.
-3. Enter the port (default `23`) and credentials, if the device requires them.
-4. Send commands in the session window — use ↑/↓ to recall previous commands.
-5. Click **Save Log** to export the full session transcript to a text file, or type `exit`/`quit` to close the session.
+2. Once the scan completes, a summary shows hosts scanned, hosts reachable, Telnet servers found, closed ports, and filtered/timeouts. Only Telnet-open hosts appear in the Connect list.
+3. Select a discovered device from the list and click **Connect**.
+4. Enter the port (default `23`) and credentials, if the device requires them.
+5. Send commands in the session window — use ↑/↓ to recall previous commands.
+6. Click **Save Log** to export the full session transcript to a text file, or type `exit`/`quit` to close the session.
 
 ## Security Note
 
